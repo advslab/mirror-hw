@@ -1,0 +1,80 @@
+name: source walk
+
+# Copies the source's security pages into one rolling release (tag
+# `data`): listing.ndjson.gz (every row of the portal's advisory and notice
+# lists), list.ndjson.gz (every row of the public list) and
+# notices.ndjson.gz (each notice page as served, kept across runs: a page
+# is fetched again when it is new, moved in the list, last answered other
+# than 200, past 30 days old (at most 8 a run), or with `full`), beside
+# state.json, written last. A unit the source did not answer for, or that
+# shrank below 90% of the copy held, keeps its last file; a file is
+# uploaded only when its bytes changed. The run stops at its time budget
+# and publishes what it has; the next daily run goes on from there, so no
+# follow-up run is dispatched.
+#
+# Set the six repository secrets LIST_URL, LIST_REFERER, LIST_BODY,
+# PAGE_BASE, LISTING_BASE and LISTING_REFERER (Settings → Secrets and
+# variables → Actions → Secrets); they are masked in every log.
+on:
+  schedule:
+    - cron: "20 4 * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "true fetches every notice page again"
+        required: false
+        default: ""
+      budget:
+        description: "minutes the walk may run"
+        required: false
+        default: "20"
+      pace:
+        description: "seconds between requests"
+        required: false
+        default: "1.2"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: walk
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: refuse without the source secrets
+        env:
+          LIST_URL: ${{ secrets.LIST_URL }}
+          LIST_REFERER: ${{ secrets.LIST_REFERER }}
+          LIST_BODY: ${{ secrets.LIST_BODY }}
+          PAGE_BASE: ${{ secrets.PAGE_BASE }}
+          LISTING_BASE: ${{ secrets.LISTING_BASE }}
+          LISTING_REFERER: ${{ secrets.LISTING_REFERER }}
+        run: |
+          missing=0
+          for n in LIST_URL LIST_REFERER LIST_BODY PAGE_BASE LISTING_BASE LISTING_REFERER; do
+            if [ -z "${!n}" ]; then echo "::error::repository secret $n is not set"; missing=1; fi
+          done
+          exit $missing
+      - name: walk
+        env:
+          LIST_URL: ${{ secrets.LIST_URL }}
+          LIST_REFERER: ${{ secrets.LIST_REFERER }}
+          LIST_BODY: ${{ secrets.LIST_BODY }}
+          PAGE_BASE: ${{ secrets.PAGE_BASE }}
+          LISTING_BASE: ${{ secrets.LISTING_BASE }}
+          LISTING_REFERER: ${{ secrets.LISTING_REFERER }}
+          FULL: ${{ inputs.full }}
+          BUDGET: ${{ inputs.budget || '20' }}
+          PACE: ${{ inputs.pace || '1.2' }}
+          RELEASE_TAG: data
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          chmod +x bin/source-walk
+          sha256sum bin/source-walk
+          bin/source-walk

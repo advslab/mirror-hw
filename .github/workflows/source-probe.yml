@@ -1,0 +1,50 @@
+name: source probe
+
+# Manual only. Checks from a runner whether the source answers and how
+# fast: the portal's two lists (page 1 each), the public list (page 1) and
+# the first three notice pages it names; reports each call's status, size,
+# timing and what it parsed to. Stores nothing.
+# Set the six repository secrets LIST_URL, LIST_REFERER, LIST_BODY,
+# PAGE_BASE, LISTING_BASE and LISTING_REFERER (Settings → Secrets and
+# variables → Actions → Secrets); they are masked in every log.
+on:
+  workflow_dispatch:
+    inputs:
+      pace:
+        description: "seconds between requests"
+        required: false
+        default: "1.2"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: refuse without the source secrets
+        env:
+          LIST_URL: ${{ secrets.LIST_URL }}
+          LIST_REFERER: ${{ secrets.LIST_REFERER }}
+          LIST_BODY: ${{ secrets.LIST_BODY }}
+          PAGE_BASE: ${{ secrets.PAGE_BASE }}
+          LISTING_BASE: ${{ secrets.LISTING_BASE }}
+          LISTING_REFERER: ${{ secrets.LISTING_REFERER }}
+        run: |
+          missing=0
+          for n in LIST_URL LIST_REFERER LIST_BODY PAGE_BASE LISTING_BASE LISTING_REFERER; do
+            if [ -z "${!n}" ]; then echo "::error::repository secret $n is not set"; missing=1; fi
+          done
+          exit $missing
+      - name: probe
+        env:
+          LIST_URL: ${{ secrets.LIST_URL }}
+          LIST_REFERER: ${{ secrets.LIST_REFERER }}
+          LIST_BODY: ${{ secrets.LIST_BODY }}
+          PAGE_BASE: ${{ secrets.PAGE_BASE }}
+          LISTING_BASE: ${{ secrets.LISTING_BASE }}
+          LISTING_REFERER: ${{ secrets.LISTING_REFERER }}
+          PACE: ${{ inputs.pace }}
+        run: |
+          chmod +x bin/source-probe
+          sha256sum bin/source-probe
+          bin/source-probe
